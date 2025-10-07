@@ -1,0 +1,782 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Campus Energy Monitor</title>
+    <!-- Load Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Load Chart.js for visualizations -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@2.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+    
+    <!-- Load Flatpickr CSS for Date Range Selection -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/flatpickr/4.6.13/flatpickr.min.css">
+    <!-- Load Flatpickr JS -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/flatpickr/4.6.13/flatpickr.min.js"></script>
+    
+    <style>
+        /* Define custom font and color palette */
+        :root {
+            --color-primary: #10B981; /* Emerald Green */
+            --color-secondary: #3B82F6; /* Blue */
+            --color-background: #F8F9FA;
+            --color-card: #FFFFFF;
+        }
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: var(--color-background);
+            color: #1F2937; /* Dark Gray for text */
+        }
+        .text-primary { color: var(--color-primary); }
+        .bg-primary { background-color: var(--color-primary); }
+        .shadow-green { box-shadow: 0 10px 15px -3px rgba(16, 185, 129, 0.1), 0 4px 6px -2px rgba(16, 185, 129, 0.05); }
+
+        /* Style for Flatpickr range input */
+        .flatpickr-input[readonly] {
+            cursor: pointer;
+        }
+
+        /* Custom Modal Styling (for error messages) */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+    </style>
+</head>
+<body class="min-h-screen p-4 md:p-8">
+
+    <!-- Custom Modal for Errors (Replaces alert()) -->
+    <div id="user-message-modal" class="modal-overlay">
+        <div class="bg-white p-6 rounded-xl shadow-2xl w-full max-w-sm transform transition-all duration-300">
+            <h3 id="modal-title" class="text-xl font-bold mb-3 text-red-600">Error</h3>
+            <p id="modal-content" class="text-gray-700 mb-4">An unknown error occurred.</p>
+            <button onclick="document.getElementById('user-message-modal').style.display='none';" 
+                    class="w-full bg-blue-600 text-white py-2 rounded-lg font-semibold hover:bg-blue-700 transition duration-300">
+                OK
+            </button>
+        </div>
+    </div>
+
+    <!-- Header -->
+    <header class="mb-8">
+        <h1 class="text-4xl font-extrabold text-gray-900 flex items-center">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 mr-3 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
+            </svg>
+            Campus Energy Monitor Dashboard
+        </h1>
+        <p class="text-gray-500 mt-1">Actionable insights for a sustainable campus.</p>
+    </header>
+
+    <!-- Main Dashboard Controls -->
+    <div class="bg-white p-4 md:p-6 rounded-xl shadow-lg mb-8 border border-gray-100">
+        <h2 class="text-xl font-semibold mb-4 text-gray-700">Analytics Settings</h2>
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+
+            <!-- Building Selector -->
+            <div>
+                <label for="building-select" class="block text-sm font-medium text-gray-700 mb-1">Target Building</label>
+                <select id="building-select" onchange="updateDashboard()" class="w-full p-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary transition duration-150 ease-in-out">
+                    <option value="LIB">Library (LIB)</option>
+                    <option value="DORM">Student Dorm (DORM)</option>
+                    <option value="ADMIN">Administration (ADMIN)</option>
+                    <option value="CAF">Cafeteria (CAF)</option>
+                    <option value="SCI">Science Block (SCI)</option>
+                    <option value="GYM">Gymnasium (GYM)</option>
+                </select>
+            </div>
+
+            <!-- Current Period Selector -->
+            <div>
+                <label for="date-range-current" class="block text-sm font-medium text-gray-700 mb-1">Current Analysis Period</label>
+                <!-- This input will be initialized by flatpickr for date range selection -->
+                <input type="text" id="date-range-current" placeholder="Select Date Range" class="w-full p-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary transition duration-150 ease-in-out">
+            </div>
+
+             <!-- Comparison Period Selector -->
+            <div>
+                <label for="date-range-compare" class="block text-sm font-medium text-gray-700 mb-1">Comparison Baseline Period</label>
+                <!-- This input will be initialized by flatpickr for date range selection -->
+                <input type="text" id="date-range-compare" placeholder="Select Date Range" class="w-full p-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary transition duration-150 ease-in-out">
+            </div>
+
+            <!-- Action Button -->
+            <div class="flex items-end">
+                <button onclick="updateDashboard()" class="w-full bg-primary text-white py-2 px-4 rounded-lg font-semibold hover:bg-emerald-600 transition duration-300 ease-in-out shadow-md hover:shadow-lg">
+                    Analyze Data
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Analytics KPIs Grid -->
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+        <!-- Card 1: Total Consumption -->
+        <div class="bg-white p-6 rounded-xl shadow-md border-b-4 border-primary hover:shadow-lg transition duration-300">
+            <p class="text-sm font-medium text-gray-500">Total Consumption (Current)</p>
+            <h3 id="kpi-consumption" class="text-3xl font-bold mt-1 text-gray-900">0 kWh</h3>
+            <div class="flex items-center text-sm mt-2">
+                <span id="kpi-consumption-change" class="text-red-500 font-semibold flex items-center">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 7h8m0 0v8m0-8l-8 8" /></svg>
+                    +0%
+                </span>
+                <span class="text-gray-500 ml-1"> vs. previous period</span>
+            </div>
+        </div>
+
+        <!-- Card 2: Estimated Cost -->
+        <div class="bg-white p-6 rounded-xl shadow-md border-b-4 border-blue-500 hover:shadow-lg transition duration-300">
+            <p class="text-sm font-medium text-gray-500">Estimated Energy Cost</p>
+            <h3 id="kpi-cost" class="text-3xl font-bold mt-1 text-blue-700">₹0.00</h3>
+            <div class="flex items-center text-sm mt-2">
+                <span id="kpi-cost-change" class="text-red-500 font-semibold flex items-center">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 7h8m0 0v8m0-8l-8 8" /></svg>
+                    +0%
+                </span>
+                <span class="text-gray-500 ml-1"> vs. previous period</span>
+            </div>
+        </div>
+
+        <!-- Card 3: Carbon Footprint -->
+        <div class="bg-white p-6 rounded-xl shadow-md border-b-4 border-gray-500 hover:shadow-lg transition duration-300">
+            <p class="text-sm font-medium text-gray-500">Carbon Footprint (tCO2e)</p>
+            <h3 id="kpi-carbon" class="text-3xl font-bold mt-1 text-gray-700">0.0 tCO2e</h3>
+            <div class="flex items-center text-sm mt-2">
+                <span id="kpi-carbon-change" class="text-red-500 font-semibold flex items-center">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 7h8m0 0v8m0-8l-8 8" /></svg>
+                    +0%
+                </span>
+                <span class="text-gray-500 ml-1"> vs. previous period</span>
+            </div>
+        </div>
+
+        <!-- Card 4: Savings Potential -->
+        <div class="bg-white p-6 rounded-xl shadow-md border-b-4 border-yellow-500 hover:shadow-lg transition duration-300">
+            <p class="text-sm font-medium text-gray-500">Potential Annual Savings</p>
+            <h3 id="kpi-savings" class="text-3xl font-bold mt-1 text-yellow-700">₹0.00</h3>
+            <div class="flex items-center text-sm mt-2 text-green-600 font-semibold">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-1" viewBox="0 0 20 20" fill="currentColor">
+                    <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-11a1 1 0 10-2 0v3.586L7.707 9.293a1 1 0 00-1.414 1.414l3 3a1 1 0 001.414 0l3-3a1 1 0 00-1.414-1.414L11 10.586V7z" clip-rule="evenodd" />
+                </svg>
+                <span id="kpi-savings-note">High potential</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Content Area: Chart and Insights -->
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+        <!-- Column 1 & 2: Consumption Chart -->
+        <div class="lg:col-span-2 bg-white p-6 rounded-xl shadow-lg border border-gray-100">
+            <h2 class="text-xl font-semibold mb-4 text-gray-700">Hourly Power Consumption (kW)</h2>
+            <div class="relative h-96">
+                <canvas id="consumptionChart"></canvas>
+            </div>
+        </div>
+
+        <!-- Column 3: Anomalies and Recommendations -->
+        <div class="lg:col-span-1">
+            <div class="bg-white p-6 rounded-xl shadow-lg mb-6 border border-gray-100">
+                <h2 class="text-xl font-semibold text-red-600 mb-4 flex items-center">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 mr-2" viewBox="0 0 20 20" fill="currentColor">
+                        <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd" />
+                    </svg>
+                    Waste & Anomalies Detected
+                </h2>
+                <div id="anomaly-list" class="space-y-3">
+                    <!-- Anomalies will be inserted here -->
+                </div>
+                <div id="no-anomaly" class="text-gray-500 text-sm italic mt-2 hidden">No significant anomalies detected for this period.</div>
+            </div>
+
+            <div class="bg-white p-6 rounded-xl shadow-lg border border-gray-100">
+                <h2 class="text-xl font-semibold text-primary mb-4 flex items-center">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 mr-2 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m13.364 1.636l-.707-.707M6.343 17l-.707.707M12 20.94V21m-4.673-1.673l-.707.707M17 12a5 5 0 11-10 0 5 5 0 0110 0z" />
+                    </svg>
+                    Actionable Recommendations
+                </h2>
+                <ul id="recommendation-list" class="space-y-3 list-disc list-inside text-gray-700 text-sm">
+                    <!-- Recommendations will be inserted here -->
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- Configuration ---
+        const BUILDING_DATA = {
+            LIB: { name: "Library", baseConsumption: 80, peakConsumption: 250, nighttimeWasteFactor: 0.25, anomalyThreshold: 120, schedule: { start: 8, end: 22 } },
+            DORM: { name: "Student Dorm", baseConsumption: 60, peakConsumption: 180, nighttimeWasteFactor: 0.15, anomalyThreshold: 80, schedule: { start: 0, end: 24 } },
+            ADMIN: { name: "Administration", baseConsumption: 40, peakConsumption: 150, nighttimeWasteFactor: 0.4, anomalyThreshold: 60, schedule: { start: 7, end: 18 } },
+            CAF: { name: "Cafeteria", baseConsumption: 50, peakConsumption: 200, nighttimeWasteFactor: 0.3, anomalyThreshold: 90, schedule: { start: 6, end: 20 } },
+            SCI: { name: "Science Block", baseConsumption: 110, peakConsumption: 300, nighttimeWasteFactor: 0.35, anomalyThreshold: 150, schedule: { start: 7, end: 21 } },
+            GYM: { name: "Gymnasium", baseConsumption: 70, peakConsumption: 220, nighttimeWasteFactor: 0.1, anomalyThreshold: 100, schedule: { start: 6, end: 23 } },
+        };
+        
+        // --- CURRENCY (INR) ---
+        const COST_PER_KWH = 8.5; // INR (Approximate cost in India)
+        const CARBON_FACTOR_KWH = 0.00045; // Metric tons CO2e per kWh
+        
+        let consumptionChart = null;
+        let flatpickrCurrent;
+        let flatpickrCompare;
+
+        // --- Custom Message Box Utility (replaces alert()) ---
+        function showUserMessage(title, message, titleClass = 'text-blue-600') {
+            const modal = document.getElementById('user-message-modal');
+            document.getElementById('modal-title').textContent = title;
+            document.getElementById('modal-title').className = `text-xl font-bold mb-3 ${titleClass}`;
+            document.getElementById('modal-content').textContent = message;
+            modal.style.display = 'flex';
+        }
+
+        // --- STATISTICAL ANOMALY DETECTION UTILITIES ---
+
+        function sortNumbers(arr) {
+            return arr.slice().sort((a, b) => a - b);
+        }
+
+        function quantile(sortedArr, q) {
+            const pos = (sortedArr.length - 1) * q;
+            const base = Math.floor(pos);
+            const rest = pos - base;
+            if (sortedArr[base + 1] !== undefined) {
+                return sortedArr[base] + rest * (sortedArr[base + 1] - sortedArr[base]);
+            } else {
+                return sortedArr[base];
+            }
+        }
+
+        function calculateHourlyStatistics(data) {
+            const consumptionByHourOfWeek = new Map();
+
+            data.forEach(item => {
+                const itemDate = new Date(item.timestamp);
+                const day = itemDate.getDay(); // 0 (Sunday) to 6 (Saturday)
+                const hour = itemDate.getHours();
+                const key = `${day}-${hour}`;
+                
+                if (!consumptionByHourOfWeek.has(key)) {
+                    consumptionByHourOfWeek.set(key, []);
+                }
+                consumptionByHourOfWeek.get(key).push(item.power_kw);
+            });
+
+            const hourlyStats = new Map();
+
+            consumptionByHourOfWeek.forEach((consumptions, key) => {
+                if (consumptions.length > 0) {
+                    const sorted = sortNumbers(consumptions);
+                    
+                    const q1 = quantile(sorted, 0.25);
+                    const median = quantile(sorted, 0.5);
+                    const q3 = quantile(sorted, 0.75);
+                    const iqr = q3 - q1;
+                    
+                    // Upper Fence: Q3 + 1.5 * IQR
+                    const upperFence = q3 + 1.5 * iqr;
+                    
+                    hourlyStats.set(key, { median, q1, q3, iqr, upperFence });
+                }
+            });
+
+            return hourlyStats;
+        }
+
+        function detectAnomalies(currentData, baselineStats) {
+            const anomalies = [];
+            
+            currentData.forEach(item => {
+                const itemDate = new Date(item.timestamp);
+                const day = itemDate.getDay();
+                const hour = itemDate.getHours();
+                const key = `${day}-${hour}`;
+                const stats = baselineStats.get(key);
+
+                if (stats && stats.upperFence) {
+                    if (item.power_kw > stats.upperFence) {
+                        
+                        // Format for the UI list
+                        const formattedTime = itemDate.toLocaleTimeString('en-IN', {
+                            month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true
+                        });
+                        
+                        const deviation = item.power_kw - stats.median;
+                        
+                        let reason = `Consumption is abnormally high (${item.power_kw.toFixed(1)} kW), deviating by ${deviation.toFixed(1)} kW from the typical median for this hour.`;
+                        
+                        if (hour >= 1 && hour <= 5) {
+                            reason += " This is a deep night spike, strongly indicating equipment malfunction or wasted energy.";
+                        } else if (hour < 7 || hour > 22) {
+                            reason += " This occurs outside of standard campus activity, likely due to faulty timers or scheduling issues (HVAC/lighting).";
+                        } else {
+                            reason += " This occurs during peak operation, possibly signaling an equipment fault or sustained over-use.";
+                        }
+                        
+                        anomalies.push({
+                            timestampString: formattedTime, // For the text list
+                            powerString: item.power_kw.toFixed(1), // For the text list
+                            timestamp: item.timestamp, // ISO string for chart plotting (x-axis)
+                            power: item.power_kw, // Number for chart plotting (y-axis)
+                            reason: reason
+                        });
+                    }
+                }
+            });
+            return anomalies;
+        }
+        
+        // --- End of Advanced Detection Utilities ---
+        
+        // --- Data Generation and Formatting ---
+
+        /**
+         * Converts a raw consumption value (kW) to a formatted currency string.
+         */
+        const formatCurrency = (value) => {
+            return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', minimumFractionDigits: 2 }).format(value);
+        };
+        
+        /**
+         * Generates a mock dataset for a period defined by start and end dates.
+         */
+        function generateMockData(buildingId, startDate, endDate, includeAnomalies = true) {
+            const config = BUILDING_DATA[buildingId];
+            const data = [];
+            
+            // Calculate duration in hours (rounded to the closest hour)
+            const timeDifferenceMs = endDate.getTime() - startDate.getTime();
+            const hoursInPeriod = Math.round(timeDifferenceMs / (3600 * 1000));
+            
+            // Generate data hourly
+            for (let i = 0; i <= hoursInPeriod; i++) {
+                // Calculate timestamp by adding i hours (in milliseconds) to the base date
+                const timestamp = new Date(startDate.getTime() + (i * 3600 * 1000));
+                
+                // Stop if we strictly pass the selected end date
+                if (timestamp.getTime() > endDate.getTime()) break;
+
+                const hour = timestamp.getHours();
+                let power_kw;
+
+                // 1. Base Usage (Night/Weekend)
+                let usage = config.baseConsumption + (Math.random() * 10);
+                
+                // 2. Scheduled Usage (Peak Hours)
+                if (hour >= config.schedule.start && hour < config.schedule.end) {
+                    const operatingHours = config.schedule.end - config.schedule.start;
+                    const normalizedHour = operatingHours > 0 ? (hour - config.schedule.start) / operatingHours : 0.5;
+                    const peakFactor = Math.sin(normalizedHour * Math.PI) * 0.7 + 0.3;
+                    usage += (config.peakConsumption - config.baseConsumption) * peakFactor * (0.8 + Math.random() * 0.4);
+                }
+
+                power_kw = Math.round(usage * 10) / 10;
+
+                // 3. Inject Anomalies (Wasteful night usage) - Only for the current period
+                if (includeAnomalies && hour >= 1 && hour <= 5 && Math.random() < config.nighttimeWasteFactor / 3) {
+                    // Inject a high spike for the current period to be detected by IQR
+                    power_kw = Math.max(power_kw, config.anomalyThreshold * (1 + Math.random() * 0.5));
+                }
+
+                data.push({
+                    timestamp: timestamp.toISOString(),
+                    power_kw: power_kw,
+                    cost: power_kw * COST_PER_KWH,
+                    carbon: power_kw * CARBON_FACTOR_KWH
+                });
+            }
+            return data;
+        }
+
+        /**
+         * Generates recommendations based on detected anomalies and building type.
+         */
+        function generateRecommendations(anomalies, buildingId, totalDays) {
+            const config = BUILDING_DATA[buildingId];
+            const recommendations = new Set();
+            const buildingName = config.name;
+
+            // General recommendations
+            recommendations.add(`Review all ${buildingName} operational schedules (HVAC, pumps, ventilation) against detected anomaly timestamps.`);
+            recommendations.add('Conduct an immediate inspection of identified equipment that contributes to the base load, particularly during nighttime hours.');
+
+            if (anomalies.length > 0) {
+                recommendations.add(`Focus on implementing **Smart Controls** to prevent recurrence of the ${anomalies.length} statistically identified anomalies.`);
+            }
+
+            if (buildingId === 'DORM') {
+                recommendations.add('Deploy smart plugs to monitor and control high-draw appliances in common areas.');
+            } else if (buildingId === 'ADMIN') {
+                recommendations.add('Verify that all IT equipment and networking gear are on a scheduled shutdown/low-power mode outside of business hours.');
+            } else if (buildingId === 'CAF') {
+                 recommendations.add('Implement a pre-cooling/pre-heating strategy to manage peak consumption related to kitchen temperature demands.');
+            } else if (buildingId === 'SCI') {
+                recommendations.add('Check lab equipment shutdown protocols, especially high-power items like fume hoods and vacuum pumps.');
+            } else if (buildingId === 'GYM') {
+                recommendations.add('Optimize ventilation and air conditioning usage based on real-time occupancy rather than fixed timers.');
+            }
+
+
+            // High-level cost saving estimate
+            // Use a safe estimated average saving per anomaly event.
+            const estimatedKWH = anomalies.length * 50; 
+            const annualSavings = (estimatedKWH * COST_PER_KWH * (365 / totalDays)).toFixed(2);
+            document.getElementById('kpi-savings').textContent = formatCurrency(annualSavings);
+            document.getElementById('kpi-savings-note').textContent = `Targeting Anomalies could save ${formatCurrency(annualSavings)}/yr.`;
+
+            return Array.from(recommendations);
+        }
+
+        /**
+         * Initializes and updates the Chart.js visualization.
+         */
+        function renderChart(currentData, compareData, baselineStats, anomalies) {
+            const ctx = document.getElementById('consumptionChart').getContext('2d');
+            
+            const currentLabels = currentData.map(d => new Date(d.timestamp));
+            const currentPower = currentData.map(d => d.power_kw);
+            const comparePower = compareData.map(d => d.power_kw);
+
+            // Calculate Upper Fence line for visualization
+            const upperFenceData = currentData.map(d => {
+                const itemDate = new Date(d.timestamp);
+                const day = itemDate.getDay();
+                const hour = itemDate.getHours();
+                const key = `${day}-${hour}`;
+                const stats = baselineStats.get(key);
+                return stats ? stats.upperFence : null;
+            });
+
+            // Prepare anomaly points for dedicated plotting
+            const anomalyPlotData = anomalies.map(a => ({
+                x: new Date(a.timestamp),
+                y: a.power
+            }));
+
+            const datasets = [
+                {
+                    label: 'Current Consumption',
+                    data: currentPower,
+                    backgroundColor: 'rgba(16, 185, 129, 0.4)',
+                    borderColor: 'rgb(16, 185, 129)',
+                    borderWidth: 3,
+                    pointRadius: 0,
+                    tension: 0.4,
+                    fill: true
+                },
+                {
+                    label: 'Anomaly Threshold',
+                    data: upperFenceData,
+                    backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                    borderColor: 'rgb(251, 146, 60)',
+                    borderWidth: 1,
+                    pointRadius: 0,
+                    tension: 0.4,
+                    borderDash: [8, 4],
+                    fill: '-1'
+                },
+                {
+                    label: 'Detected Anomaly Spike',
+                    data: anomalyPlotData,
+                    type: 'scatter',
+                    backgroundColor: 'rgb(239, 68, 68)',
+                    borderColor: 'rgb(255, 255, 255)',
+                    borderWidth: 2,
+                    pointRadius: 6,
+                    pointHoverRadius: 8,
+                    fill: false,
+                },
+                {
+                    label: 'Comparison Baseline',
+                    data: comparePower,
+                    backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                    borderColor: 'rgb(59, 130, 246)',
+                    borderWidth: 2,
+                    pointRadius: 0,
+                    tension: 0.4,
+                    borderDash: [5, 5],
+                    fill: false
+                }
+            ];
+
+            if (consumptionChart) {
+                consumptionChart.destroy();
+            }
+
+            consumptionChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: currentLabels,
+                    datasets: datasets
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    // --- TRADING CHART INTERACTION SETTINGS ---
+                    interaction: {
+                        mode: 'index', 
+                        intersect: false, 
+                        axis: 'x' 
+                    },
+                    hover: {
+                        mode: 'index',
+                        intersect: false
+                    },
+                    // --- END TRADING CHART INTERACTION SETTINGS ---
+                    scales: {
+                        x: {
+                            type: 'time',
+                            time: {
+                                unit: 'hour',
+                                displayFormats: { 
+                                    hour: 'HH:mm',
+                                    day: 'MMM d'
+                                }
+                            },
+                            title: {
+                                display: true,
+                                text: 'Date & Time'
+                            },
+                            grid: { display: false }
+                        },
+                        y: {
+                            title: {
+                                display: true,
+                                text: 'Power Consumption (kW)'
+                            },
+                            min: 0,
+                            beginAtZero: true
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            position: 'top',
+                            labels: { usePointStyle: true }
+                        },
+                        // --- PROFESSIONAL TOOLTIP CALLBACKS ---
+                        tooltip: {
+                            mode: 'index',
+                            intersect: false,
+                            callbacks: {
+                                title: (context) => {
+                                    // Custom Title: Show full date and time clearly
+                                    if (context.length > 0) {
+                                        return new Date(context[0].label).toLocaleTimeString('en-IN', { 
+                                            year: 'numeric', month: 'short', day: 'numeric', 
+                                            hour: '2-digit', minute: '2-digit', hour12: false 
+                                        });
+                                    }
+                                    return '';
+                                },
+                                label: (context) => {
+                                    const value = context.parsed.y;
+                                    const datasetLabel = context.dataset.label;
+                                    
+                                    if (datasetLabel.includes('Current Consumption')) {
+                                        // Calculate derived values for the hovered point
+                                        const hourlyCost = value * COST_PER_KWH;
+                                        const hourlyCarbon = value * CARBON_FACTOR_KWH;
+                                        
+                                        // Return an array of strings to display multiple lines in the tooltip
+                                        return [
+                                            ` Power: ${value.toFixed(1)} kW`,
+                                            ` Est. Cost: ${formatCurrency(hourlyCost)}/hr`,
+                                            ` Carbon: ${hourlyCarbon.toFixed(3)} tCO2e/hr`
+                                        ];
+                                    }
+
+                                    if (datasetLabel.includes('Anomaly Spike')) {
+                                        return ` 🔥 ANOMALY: ${value.toFixed(1)} kW`;
+                                    }
+                                    
+                                    // Default labels for Baseline and Threshold lines
+                                    if (datasetLabel.includes('Baseline') || datasetLabel.includes('Threshold')) {
+                                        return ` ${datasetLabel}: ${value.toFixed(1)} kW`;
+                                    }
+                                    return `${datasetLabel}: ${value}`;
+                                }
+                            }
+                        }
+                        // --- END PROFESSIONAL TOOLTIP CALLBACKS ---
+                    }
+                }
+            });
+        }
+
+        /**
+         * Calculates KPI metrics and updates the dashboard cards.
+         */
+        function updateKPIs(currentData, compareData) {
+            const currentTotalKwh = currentData.reduce((sum, item) => sum + item.power_kw, 0);
+            const compareTotalKwh = compareData.reduce((sum, item) => sum + item.power_kw, 0);
+
+            // 1. Consumption Calculations
+            const currentCost = currentTotalKwh * COST_PER_KWH;
+            const currentCarbon = currentTotalKwh * CARBON_FACTOR_KWH;
+            
+            // Handle division by zero if comparison data is 0 or very small
+            let changePercent = 0;
+            if (compareTotalKwh > 0) {
+                changePercent = ((currentTotalKwh - compareTotalKwh) / compareTotalKwh) * 100;
+            }
+            
+            const isIncrease = changePercent > 0;
+
+            const formatChange = () => {
+                const element = document.createElement('span');
+                element.className = `font-semibold flex items-center`;
+                const icon = `<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="${isIncrease ? 'M13 7h8m0 0v8m0-8l-8 8' : 'M13 17h8m0 0V9m0 8l-8-8'}" /></svg>`;
+                element.innerHTML = `${icon} ${Math.abs(changePercent).toFixed(1)}%`;
+                element.classList.add(isIncrease ? 'text-red-500' : 'text-green-500');
+                return element;
+            };
+
+            // Update Consumption
+            document.getElementById('kpi-consumption').textContent = `${currentTotalKwh.toFixed(0)} kWh`;
+            document.getElementById('kpi-consumption-change').innerHTML = '';
+            document.getElementById('kpi-consumption-change').appendChild(formatChange());
+            
+            // Update Cost
+            document.getElementById('kpi-cost').textContent = formatCurrency(currentCost);
+            document.getElementById('kpi-cost-change').innerHTML = '';
+            document.getElementById('kpi-cost-change').appendChild(formatChange());
+
+            // Update Carbon
+            document.getElementById('kpi-carbon').textContent = `${currentCarbon.toFixed(2)} tCO2e`;
+            document.getElementById('kpi-carbon-change').innerHTML = '';
+            document.getElementById('kpi-carbon-change').appendChild(formatChange());
+        }
+
+        /**
+         * Updates the Anomalies and Recommendations section.
+         */
+        function updateInsights(anomalies, recommendations) {
+            const anomalyList = document.getElementById('anomaly-list');
+            const recommendationList = document.getElementById('recommendation-list');
+            const noAnomaly = document.getElementById('no-anomaly');
+
+            // Clear previous content
+            anomalyList.innerHTML = '';
+            recommendationList.innerHTML = '';
+            noAnomaly.classList.add('hidden');
+
+            if (anomalies.length > 0) {
+                anomalies.slice(0, 5).forEach(a => { // Show top 5 anomalies
+                    const li = document.createElement('div');
+                    li.className = 'p-3 bg-red-50 border border-red-200 rounded-lg text-sm';
+                    li.innerHTML = `
+                        <p class="font-bold text-red-700">${a.timestampString}</p>
+                        <p class="text-gray-700">Power: <span class="font-mono text-red-600">${a.powerString} kW</span></p>
+                        <p class="text-gray-600 mt-1">${a.reason}</p>
+                    `;
+                    anomalyList.appendChild(li);
+                });
+                if (anomalies.length > 5) {
+                     anomalyList.innerHTML += `<p class="text-xs text-center text-gray-500 mt-2">... and ${anomalies.length - 5} more statistical outliers detected.</p>`;
+                }
+            } else {
+                noAnomaly.classList.remove('hidden');
+            }
+
+            recommendations.forEach(r => {
+                const li = document.createElement('li');
+                li.className = 'text-gray-700';
+                li.textContent = r;
+                recommendationList.appendChild(li);
+            });
+        }
+
+
+        /**
+         * Main function to fetch data and update all dashboard components.
+         */
+        function updateDashboard() {
+            const buildingId = document.getElementById('building-select').value;
+            
+            const currentPeriod = flatpickrCurrent.selectedDates;
+            const comparePeriod = flatpickrCompare.selectedDates;
+
+            // Date Range Validation
+            if (currentPeriod.length < 2 || comparePeriod.length < 2) {
+                showUserMessage('Input Error', 'Please select both the start and end dates for both the Current and Comparison periods.', 'text-red-600');
+                return;
+            }
+
+            const currentStartDate = currentPeriod[0];
+            const currentEndDate = currentPeriod[1];
+            const compareStartDate = comparePeriod[0];
+            const compareEndDate = comparePeriod[1];
+            
+            // Calculate total days in current period for annual savings projection
+            const currentDurationMs = currentEndDate.getTime() - currentStartDate.getTime();
+            const currentDurationDays = currentDurationMs / (1000 * 60 * 60 * 24);
+
+            // 1. Simulate/Fetch Data
+            const currentData = generateMockData(buildingId, currentStartDate, currentEndDate, true);
+            // Comparison data is generated WITHOUT forced anomalies to establish a clean baseline.
+            const compareData = generateMockData(buildingId, compareStartDate, compareEndDate, false); 
+            
+            // 2. Perform Advanced Analysis (IQR Method)
+            const baselineStats = calculateHourlyStatistics(compareData); // Train on comparison period
+            const anomalies = detectAnomalies(currentData, baselineStats); // Check current period
+            
+            const recommendations = generateRecommendations(anomalies, buildingId, currentDurationDays);
+            
+            // 3. Render Components
+            updateKPIs(currentData, compareData);
+            // Pass anomalies to renderChart for visual plotting
+            renderChart(currentData, compareData, baselineStats, anomalies);
+            updateInsights(anomalies, recommendations);
+
+            console.log(`Dashboard updated for ${BUILDING_DATA[buildingId].name}. Current KWh: ${currentData.reduce((sum, item) => sum + item.power_kw, 0).toFixed(0)}`);
+        }
+        
+        // --- Initialization ---
+        
+        /**
+         * Initializes Flatpickr on the date inputs.
+         */
+        function initializeDatePickers() {
+            const today = new Date();
+            const currentEnd = new Date(today);
+            const currentStart = new Date(today.getTime() - (30 * 24 * 60 * 60 * 1000));
+            const compareEnd = new Date(currentStart.getTime() - (1 * 24 * 60 * 60 * 1000));
+            const compareStart = new Date(compareEnd.getTime() - (30 * 24 * 60 * 60 * 1000));
+
+            // Flatpickr setup for Current Period
+            flatpickrCurrent = flatpickr("#date-range-current", {
+                mode: "range",
+                dateFormat: "Y-m-d",
+                defaultDate: [currentStart, currentEnd],
+                onClose: updateDashboard // Automatically re-analyze when dates are selected/changed
+            });
+
+            // Flatpickr setup for Comparison Period
+            flatpickrCompare = flatpickr("#date-range-compare", {
+                mode: "range",
+                dateFormat: "Y-m-d",
+                defaultDate: [compareStart, compareEnd],
+                onClose: updateDashboard // Automatically re-analyze when dates are selected/changed
+            });
+        }
+
+
+        // Initialize the dashboard on load
+        window.onload = () => {
+            initializeDatePickers();
+            updateDashboard();
+        };
+
+    </script>
+</body>
+</html>
